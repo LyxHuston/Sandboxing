@@ -1,17 +1,27 @@
 """
-attempting to create an import statement that will alter the imported module to
-restrict access to files, imported modules, network access, and recursively alter any imported modules to be the same
+An import statement to create a safe environment.
+Copyright (C) 2023  Lyx Huston
 
-restricted files: Not started
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published
+by the Free Software Foundation, either version 3 of the License, or any later
+versions.
 
-imported modules: starting
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
 
-network access: not started
+A copy of the GNU Affero General Public License is in LICENSE.txt.  If not, see
+<https://www.gnu.org/licenses/>.
 
-globally allowed and disallowed modules for import: done (simple)
+An import statement that will alter the imported module to restrict access to
+files, imported modules, network access, and recursively alter any imported
+modules to be the same.
+
+The below code is mostly cobbled together versions of importlib._bootstrap,
+importlib._bootstrap_external, and zipimporter.
 """
-
-# TODO implement use of _setup() (https://happytest-apidoc.readthedocs.io/en/latest/_modules/_frozen_importlib_external/)
 
 import _warnings
 import _weakref
@@ -67,7 +77,8 @@ _ERR_MSG = _ERR_MSG_PREFIX + '{!r}'
 
 class RestrictedImport:
     """
-    a class for restricted import objects which are used to overwrite import and loading methods and keep track of modules loaded through this
+    a class for restricted import objects which are used to overwrite import and
+     loading methods and keep track of modules loaded through this
     """
 
     __track = -1
@@ -88,12 +99,28 @@ class RestrictedImport:
 
     def __init__(self, allowed_imports_by_path: dict[str: list[str]] = frozendict.frozendict(), disallowed_imports_by_path: dict[str: list[str]] = frozendict.frozendict(), use_deepcopy: bool = False, stdin = None, stdout = None):
         """
-        create a restricted importer object
-        :param allowed_imports_by_path:
-        :param disallowed_imports_by_path:
+        Create a restricted importer object
+        :param allowed_imports_by_path:  This should a dictionary.
+        Keys are the path to the directory containing the module.  It should not
+        include the file name itself.  There are 2 special cases: builtins,
+        which should be use a string of 'built-in' as a key, and if you want to
+        allow from any path, which should use '*'.
+        The importer will attempt to use the universal, then the key with the
+        highest match.  Keys must be absolute paths.
+        The values should be either a string of '*', which will allow any import
+        from that path, or a list of strings.  The strings should be module
+        names.  To allow importing an entire package, use '<package name>.*'.
+        :param disallowed_imports_by_path:  This should be identical in format
+        to allowed_imports_by_path.  Keys and values behave identically.
+        The importer first checks if a module is allowed on the universal path,
+        then if it is disallowed on the universal path.  Then, it checks if it's
+        allowed on the specific path, then if it's disallowed on the specific
+        path.
+        Only import statements within the sandbox are affected by these
+        restrictions.
         :param use_deepcopy:
-        :param stdin:
-        :param stdout:
+        :param stdin: file object for standard input for the sandboxed area
+        :param stdout: file object for standard output from the sandboxed area
         """
 
         self._use_deepcopy = use_deepcopy

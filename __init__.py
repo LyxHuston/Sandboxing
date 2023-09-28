@@ -1,5 +1,5 @@
 """
-the easy level of challenge!  Importing any module is allowed.
+The initialization module for the sandboxing package.  Collects relevant pieces.
 Copyright (C) 2023  Lyx Huston
 
 This program is free software: you can redistribute it and/or modify
@@ -14,15 +14,23 @@ GNU Affero General Public License for more details.
 
 A copy of the GNU Affero General Public License is in LICENSE.txt.  If not, see
 <https://www.gnu.org/licenses/>.
+
+the hope is to eventually get this into a position to widely distribute it.  So
+that's why this file exists.
+
+Anyways...
+
+restricted file access: not started
+
+imported modules: in progress
+
+network access: not started
+
+globally allowed and disallowed modules for import: done (simple) (see notes in
+file, not as safe as other options)
 """
 
-a = object()  # retrieve this from the sandboxed import!
+from restrict_global_imports import set_allowed, set_disallowed
+import sandbox_import
 
-if __name__ == '__main__':
-    import sandbox_import
-
-    sandbox = sandbox_import.RestrictedImport(allowed_imports_by_path={'*': '*'})
-
-    solution = sandbox("solution")
-
-    print(a is solution.get_a())
+__all__ = ["sandbox_import", "set_allowed", "set_disallowed"]

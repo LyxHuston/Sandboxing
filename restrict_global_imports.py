@@ -1,8 +1,27 @@
 """
-for if you want to restrict imports from any possible file, not just specific
-ones
+Restrict all imports at current level of sandboxing by name.
+Copyright (C) 2023  Lyx Huston
 
-NOTE: this also alters the module cache in order to prevent people from importing already imported modules that are disallowed
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published
+by the Free Software Foundation, either version 3 of the License, or any later
+versions.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+A copy of the GNU Affero General Public License is in LICENSE.txt.  If not, see
+<https://www.gnu.org/licenses/>.
+
+for if you want to restrict imports from any possible file at the current
+sandboxing level, not just specific ones.
+
+NOTE: this also alters the module cache in order to prevent people from
+importing already imported modules that are disallowed through the sys module.
+NOTE: this is a relatively weak protection.  If you implement this, restrict the
+sys module.
 """
 
 import sys
@@ -35,7 +54,7 @@ def set_disallowed(dalst: list[str]):
     """
     sets a disallowed list for the restricted imports
     note: set 'sys' in here so that people can't access sys.meta_path and remove the checker
-    :param dalst: disallowed modules
+    :param dalst: disallowed modules by name
     :return:
     """
     global _mode
@@ -51,7 +70,7 @@ def set_allowed(alst: list[str]):
     """
     sets an allowed list for the restricted imports
     note: do not set 'sys' in here so that people can't access sys.meta_path and remove the checker
-    :param alst: disallowed modules
+    :param alst: disallowed modules by name
     :return:
     """
     global _mode
