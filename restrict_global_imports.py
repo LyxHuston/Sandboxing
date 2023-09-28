@@ -1,6 +1,8 @@
 """
 for if you want to restrict imports from any possible file, not just specific
 ones
+
+NOTE: this also alters the module cache in order to let it effectively
 """
 
 import sys
@@ -54,7 +56,10 @@ def set_allowed(alst: list[str]):
     _mode = False
     _lst.clear()
     _lst.extend(alst)
-    sys.modules.clear()
+    module_check = tuple(sys.modules.keys())
+    for module in module_check:
+        if module not in alst:
+            del sys.modules[module]
 
 
 sys.meta_path.insert(0, _Restrict)
