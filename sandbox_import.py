@@ -7,16 +7,6 @@ restricted files: Not started
 imported modules: not started
 
 network access: not started
+
+globally allowed and disallowed modules for import: done (simple)
 """
-
-
-from importlib import __import__
-# __import__ = importlib.import_module
-# __import__ = None
-# import_stmt = None
-
-# import errors
-errors = __import__("errors")
-import test
-
-raise errors.RestrictedAccessError()
