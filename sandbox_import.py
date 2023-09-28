@@ -20,13 +20,11 @@ import os
 import sys
 import _io
 import marshal
-import traceback
 
 import frozendict
 import time
 from importlib._bootstrap import _builtin_from_name
 _imp = _builtin_from_name("_imp")
-from threading import Barrier
 
 
 try:
@@ -659,12 +657,8 @@ class RestrictedImport:
         return mod
 
     def replace_builtins(self, mod):
-        print(mod)
-        # traceback.print_stack()
         # if hasattr(mod, '__builtins__'):
-        print("replacing builtins")
         setattr(mod, '__builtins__', self._builtins)
-        # print(mod.__dict__.get("__builtins__", None)["__import__"])
         return mod
 
     def __make_local_classes(outer):
