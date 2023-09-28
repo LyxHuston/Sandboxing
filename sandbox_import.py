@@ -69,6 +69,9 @@ memoryview (temporarily removed)
 """
 
 
+del_attr = object()
+
+
 _NEEDS_LOADING = object()
 _ERR_MSG_PREFIX = 'No module named '
 _ERR_MSG = _ERR_MSG_PREFIX + '{!r}'
@@ -82,8 +85,8 @@ class RestrictedImport:
 
     __track = -1
 
-    @property
     @classmethod
+    @property
     def __counter(cls):
         cls.__track += 1
         return cls.__track
@@ -96,7 +99,14 @@ class RestrictedImport:
     def _builtins(self):
         return self._local_module_cache['builtins']
 
-    def __init__(self, allowed_imports_by_path: dict[str: list[str]] = frozendict.frozendict(), disallowed_imports_by_path: dict[str: list[str]] = frozendict.frozendict(), use_deepcopy: bool = False, stdin = None, stdout = None):
+    def __init__(
+            self,
+            *,
+            allowed_imports_by_path: dict[str: list[str]] = frozendict.frozendict(),
+            disallowed_imports_by_path: dict[str: list[str]] = frozendict.frozendict(),
+            use_deepcopy: bool = False,
+            replace_attrs: list[tuple[str, Any]] = ()
+    ):
         """
         Create a restricted importer object
         :param allowed_imports_by_path:  This should a dictionary.
@@ -118,8 +128,11 @@ class RestrictedImport:
         Only import statements within the sandbox are affected by these
         restrictions.
         :param use_deepcopy:
-        :param stdin: file object for standard input for the sandboxed area
-        :param stdout: file object for standard output from the sandboxed area
+        :param replace_attrs: Allows you to replace the value of a name in a
+        module post-execute.  It is a list of tuples.  The first item in the
+        tuple should be <module name>.<attr name>, the second should be whatever
+        value you want to replace it with.  This can also be used to inject a
+        value into a module post-execute.
         """
 
         self._use_deepcopy = use_deepcopy
@@ -132,29 +145,35 @@ class RestrictedImport:
                 disallowed_imports_by_path[key] if key in disallowed_imports_by_path else []
             )
 
-        self.__sandbox_number = RestrictedImport.__counter.fget
+        self.__sandbox_number = RestrictedImport.__counter
 
         # make the required 'modules' with modified behavior
         self._local_module_cache: dict[str: module] = dict()
-        _sys: module = self._module_copy(sys)  # TODO make better recursive searcher
         self.meta_path = []
-        set_multiple_attrs(_sys, [
-            ("modules", self._local_module_cache),
-            ("stdin", stdin),
-            ("__stdin__", stdin),
-            ("stdout", stdout),
-            ("__stdout__", stdout)
-        ])
+
+        # make the dictionary for replacement of builtin functionality
+        base_replace = [("sys.modules", self._local_module_cache), ("sys.stdin", None), ("sys.__stdin__", None),
+                        ("sys.stdout", None), ("sys.__stdout__", None), ("builtins.open", None),
+                        ("builtins.input", None), ("builtins.print", None), ("builtins.memoryview", None),
+                        ("builtins.__import__", self.make_import())]
+        base_replace.extend(replace_attrs)
+
+        self.replace_attrs = dict()
+        for string, val in base_replace:
+            mod, attr = string.split('.')
+            if mod not in self.replace_attrs:
+                self.replace_attrs[mod] = []
+            gotten = self.replace_attrs[mod]
+            for i in range(len(gotten)):
+                if gotten[i][0] == attr:
+                    del gotten[i]
+            gotten.append((attr, val))
+
+        _sys: module = self._module_copy(sys)  # TODO make better recursive searcher
+        set_multiple_attrs(_sys, self.replace_attrs["sys"])
         self._local_module_cache[_sys.__name__] = _sys
         _builtins: module = self._module_copy(builtins)
-        set_multiple_attrs(_builtins, [
-            ("open", None),
-            ("input", None),
-            ("print", None),
-            ("memoryview", None),
-            ("__import__", self.make_import()),  # TODO this might be safe?
-            ("__doc__", "Worked!")
-        ])
+        set_multiple_attrs(_builtins, self.replace_attrs["builtins"])
         self._local_module_cache[_builtins.__name__] = _builtins
 
         self._sys.path_importer_cache = dict()
@@ -206,6 +225,11 @@ class RestrictedImport:
     def __call__(self, name: str, package: str = None, specific_import_list: list[str] = ()):  # TODO potential safety concern in globals or locals
         """
         import a module based on importlib's import_module function.
+        :param name: name of the module to look for
+        :param package: what package to look for in the module, only useful for
+        a relative import.
+        :param specific_import_list: a list of names for the function to look
+        for in a module and return in a tuple.
         """
         level = 0
         if name.startswith('.'):
@@ -231,7 +255,7 @@ class RestrictedImport:
             else:
                 globals_ = globals if globals is not None else {}
                 package = _calc___package__(globals_)
-                mod = self._gcd_import(name, package, level)
+                mod = self._safe_gcd_import(name, package, level)
             if not fromlist:
                 # Return up to the first dot in 'name'. This is complicated by the fact
                 # that 'name' may be relative.
@@ -247,7 +271,7 @@ class RestrictedImport:
                     # when ``'.' not in name``.
                     return self._sys.modules[mod.__name__[:len(mod.__name__) - cut_off]]
             elif hasattr(mod, '__path__'):
-                return self._handle_fromlist(mod, fromlist, self._gcd_import)
+                return self._handle_fromlist(mod, fromlist, self._safe_gcd_import)
             else:
                 return mod
 
@@ -257,7 +281,9 @@ class RestrictedImport:
         _sanity_check(name, package, level)
         if level > 0:
             name = _resolve_name(name, package, level)
-        return self._safe_find_and_load(name, self._safe_gcd_import)
+        mod = self._safe_find_and_load(name, self._safe_gcd_import)
+        set_multiple_attrs(mod, self.replace_attrs[name])
+        return mod
 
     def _gcd_import(self, name, package=None, level=0):  # TODO check for safety concerns (called in _handle_from_list)
         """Import and return the module based on its name, the package the call is
@@ -271,7 +297,9 @@ class RestrictedImport:
         _sanity_check(name, package, level)
         if level > 0:
             name = _resolve_name(name, package, level)
-        return self._find_and_load(name, self._gcd_import)
+        mod = self._find_and_load(name, self._gcd_import)
+        set_multiple_attrs(mod, self.replace_attrs[name])
+        return mod
 
     def _safe_find_and_load(self, name, import_):
         """Find and load the module."""
@@ -3244,7 +3272,10 @@ def set_multiple_attrs(obj: Any, lst: list[tuple[str, Any]]) -> None:
     :return:
     """
     for attr, val in lst:
-        setattr(obj, attr, val)
+        if val is del_attr:
+            delattr(obj, attr)
+        else:
+            setattr(obj, attr, val)
 
 
 def decode_source(source_bytes):
@@ -3514,19 +3545,55 @@ class OuterImportCall:
 
 
 class ModCall(type(sys)):
-    def __call__(self, name, allowed_imports_by_path: dict[str: list[str]] = frozendict.frozendict(), disallowed_imports_by_path: dict[str: list[str]] = frozendict.frozendict(), use_deepcopy: bool = False, stdin = None, stdout = None):
+    def __call__(
+            self,
+            name,
+            *,
+            allowed_imports_by_path: dict[str: list[str]] = frozendict.frozendict(),
+            disallowed_imports_by_path: dict[str: list[str]] = frozendict.frozendict(),
+            use_deepcopy: bool = False,
+            replace_attrs: list[tuple[str, Any]] = ()
+    ):
         """
         calls restricted import from module level, initializing a RestrictedImport object then using it
         :param name: name of file to import
-        :param allowed_imports_by_path:
-        :param disallowed_imports_by_path:
-        :param use_deepcopy: whether to use copy or deepcopy on already loaded modules on outer scope
+        :param allowed_imports_by_path:  This should a dictionary.
+        Keys are the path to the directory containing the module.  It should not
+        include the file name itself.  There are 2 special cases: builtins,
+        which should be use a string of 'built-in' as a key, and if you want to
+        allow from any path, which should use '*'.
+        The importer will attempt to use the universal, then the key with the
+        highest match.  Keys must be absolute paths.
+        The values should be either a string of '*', which will allow any import
+        from that path, or a list of strings.  The strings should be module
+        names.  To allow importing an entire package, use '<package name>.*'.
+        :param disallowed_imports_by_path:  This should be identical in format
+        to allowed_imports_by_path.  Keys and values behave identically.
+        The importer first checks if a module is allowed on the universal path,
+        then if it is disallowed on the universal path.  Then, it checks if it's
+        allowed on the specific path, then if it's disallowed on the specific
+        path.
+        Only import statements within the sandbox are affected by these
+        restrictions.
+        :param use_deepcopy:
+        :param replace_attrs: Allows you to replace the value of a name in a
+        module post-execute.  It is a list of tuples.  The first item in the
+        tuple should be <module name>.<attr name>, the second should be whatever
+        value you want to replace it with.  This can also be used to inject a
+        value into a module post-execute.
         :return: a module
         """
-        RI = RestrictedImport(allowed_imports_by_path, disallowed_imports_by_path, use_deepcopy, stdin, stdout)
+        RI = RestrictedImport(
+            allowed_imports_by_path=allowed_imports_by_path,
+            disallowed_imports_by_path=disallowed_imports_by_path,
+            use_deepcopy=use_deepcopy,
+            replace_attrs=replace_attrs
+        )
         return RI(name)
 
     RestrictedImport = RestrictedImport
+
+    del_attr = del_attr
 
 
 sys.modules[__name__] = ModCall(__name__)
