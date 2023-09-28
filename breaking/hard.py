@@ -25,4 +25,4 @@ if __name__ == '__main__':
 
     solution = sandbox("solution")
 
-    print(solution.get_a())
+    print(a is solution.get_a())
