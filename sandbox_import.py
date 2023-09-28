@@ -149,6 +149,7 @@ class RestrictedImport:
 
         # make the required 'modules' with modified behavior
         self._local_module_cache: dict[str: module] = dict()
+        self._local_module_compiled: dict[str: module] = dict()
         self.meta_path = []
 
         # make the dictionary for replacement of builtin functionality
@@ -207,7 +208,7 @@ class RestrictedImport:
 
     def _copy_between_dicts(self, cop: dict, mod: dict):
         for key in mod:
-            if isinstance(mod[key], type(sys)):
+            if isinstance(mod[key], _module_type):
                 cop[key] = self._module_copy(mod[key])
             elif isinstance(mod[key], dict) and key == "__builtins__":
                 cop[key] = {}
@@ -241,9 +242,18 @@ class RestrictedImport:
                 if character != '.':
                     break
                 level += 1
+
         mod = self._gcd_import(name[level:], package, level)
         if len(specific_import_list) == 0:
             return mod
+        elif specific_import_list == "*":
+            if hasattr(mod, "__all__"):
+                return (getattr(mod, arg) for arg in getattr(mod, "__all__"))
+            res = []
+            for nme, val in mod.__dict__:
+                if not nme.startswith("_"):
+                    res.append(val)
+            return tuple(res)
         else:
             return (getattr(mod, arg) for arg in specific_import_list)
 
@@ -281,7 +291,10 @@ class RestrictedImport:
         _sanity_check(name, package, level)
         if level > 0:
             name = _resolve_name(name, package, level)
-        mod = self._safe_find_and_load(name, self._safe_gcd_import)
+        if name in self._local_module_compiled:
+            pass
+        else:
+            mod = self._safe_find_and_load(name, self._safe_gcd_import)
         set_multiple_attrs(mod, self.replace_attrs[name])
         return mod
 
@@ -297,7 +310,10 @@ class RestrictedImport:
         _sanity_check(name, package, level)
         if level > 0:
             name = _resolve_name(name, package, level)
-        mod = self._find_and_load(name, self._gcd_import)
+        if name in self._local_module_compiled:
+            pass
+        else:
+            mod = self._find_and_load(name, self._gcd_import)
         set_multiple_attrs(mod, self.replace_attrs[name])
         return mod
 
@@ -379,13 +395,6 @@ class RestrictedImport:
                 msg = (_ERR_MSG + '; {!r} is not a package').format(name, parent)
                 raise ModuleNotFoundError(msg, name=name) from None
         spec = self._find_spec(name, path)  # getting spec
-
-        # pth = spec.origin
-        # nme = spec.name
-        # if '.' in pth:
-        #     pth = pth[:pth.rindex('.')]
-        # if pth.endswith(os.sep + nme):
-        #     pth = pth[:-1 - len(nme)]
 
         if spec is None:
             raise ModuleNotFoundError(_ERR_MSG.format(name), name=name)
@@ -3160,7 +3169,7 @@ class RestrictedImport:
 
 
 def _new_module(name):
-    return type(sys)(name)
+    return _module_type(name)
 
 
 def _call_with_frames_removed(f, *args, **kwds):
@@ -3544,7 +3553,7 @@ class OuterImportCall:
         self.name = None
 
 
-class ModCall(type(sys)):
+class ModCall(_module_type):
     def __call__(
             self,
             name,
