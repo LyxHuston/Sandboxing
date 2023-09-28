@@ -2,7 +2,7 @@
 for if you want to restrict imports from any possible file, not just specific
 ones
 
-NOTE: this also alters the module cache in order to let it effectively
+NOTE: this also alters the module cache in order to prevent people from importing already imported modules that are disallowed
 """
 
 import sys
@@ -34,6 +34,7 @@ class _Restrict:
 def set_disallowed(dalst: list[str]):
     """
     sets a disallowed list for the restricted imports
+    note: set 'sys' in here so that people can't access sys.meta_path and remove the checker
     :param dalst: disallowed modules
     :return:
     """
@@ -49,6 +50,7 @@ def set_disallowed(dalst: list[str]):
 def set_allowed(alst: list[str]):
     """
     sets an allowed list for the restricted imports
+    note: do not set 'sys' in here so that people can't access sys.meta_path and remove the checker
     :param alst: disallowed modules
     :return:
     """
